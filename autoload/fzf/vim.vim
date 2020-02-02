@@ -285,8 +285,18 @@ function! s:buflisted()
   return filter(range(1, bufnr('$')), 'buflisted(v:val) && getbufvar(v:val, "&filetype") != "qf"')
 endfunction
 
+let s:last_command = {}
+
 function! s:fzf(name, opts, extra)
   call s:check_requirements()
+
+  let s:last_command = {
+        \ 'name': a:name,
+        \ 'opts': a:opts,
+        \ 'extra': a:extra,
+        \ 'time': localtime(),
+        \ 'grep_command': $FZF_DEFAULT_COMMAND
+        \}
 
   let [extra, bang] = [{}, 0]
   if len(a:extra) <= 1
@@ -818,10 +828,14 @@ function! fzf#vim#grep(grep_command, has_column, ...)
     return s:ag_handler(a:lines, self.column)
   endfunction
   let opts['sink*'] = remove(opts, 'sink')
+  return s:with_grep_command(a:grep_command, {-> s:fzf(name, opts, a:000)})
+endfunction
+
+function! s:with_grep_command(grep_command, fn)
   try
     let prev_default_command = $FZF_DEFAULT_COMMAND
     let $FZF_DEFAULT_COMMAND = a:grep_command
-    return s:fzf(name, opts, a:000)
+    return a:fn()
   finally
     let $FZF_DEFAULT_COMMAND = prev_default_command
   endtry
@@ -1457,6 +1471,36 @@ function! fzf#vim#complete(...)
 
   call feedkeys("\<Plug>(-fzf-complete-trigger)")
   return ''
+endfunction
+
+function! fzf#vim#resume()
+  if !exists("g:fzf_history_dir") || len(keys(s:last_command)) == 0
+    return
+  endif
+
+  let opts = copy(s:last_command.opts)
+  let last_command_history_file = expand(g:fzf_history_dir.'/'.s:last_command.name)
+
+  if filereadable(last_command_history_file) && getftime(last_command_history_file) > s:last_command.time
+    let fzf_queries = readfile(last_command_history_file)
+
+    if len(fzf_queries) > 0
+      let last_query = fzf_queries[len(fzf_queries) - 1]
+
+      if has_key(opts, 'options')
+        if type(opts.options) == s:TYPE.list
+          call add(opts.options, '--query')
+          call add(opts.options, last_query)
+        else
+          let opts.options .= ' --query '.last_query
+        endif
+      else
+        let opts.options = ['--query', last_query]
+      endif
+    endif
+  endif
+
+  return s:with_grep_command(s:last_command.grep_command, {-> s:fzf(s:last_command.name, opts, s:last_command.extra)})
 endfunction
 
 " ------------------------------------------------------------------
