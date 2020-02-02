@@ -142,9 +142,9 @@ COMMANDS                                                      *fzf-vim-commands*
   `:Maps`                 | Normal mode mappings
   `:Helptags`             | Help tags [1]
   `:Filetypes`            | File types
+  `:Resume`               | Resume last command (with fzf query if there was one)
  -----------------------+--------------------------------------------------------------------------------------
 
-                                                      *g:fzf_vim.command_prefix*
 
  - Most commands support CTRL-T / CTRL-X / CTRL-V key bindings to open in a new
    tab, a new split, or in a new vertical split
