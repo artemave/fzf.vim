@@ -318,6 +318,8 @@ function! s:buflisted()
   return filter(range(1, bufnr('$')), 'buflisted(v:val) && getbufvar(v:val, "&filetype") != "qf"')
 endfunction
 
+let s:last_command = {}
+
 function! s:fzf(name, opts, extra)
   call s:check_requirements()
 
@@ -339,6 +341,15 @@ function! s:fzf(name, opts, extra)
   let eopts  = has_key(extra, 'options') ? remove(extra, 'options') : ''
   let merged = extend(copy(a:opts), extra)
   call s:merge_opts(merged, eopts)
+
+  let s:last_command = {
+        \ 'name': a:name,
+        \ 'opts': merged,
+        \ 'bang': bang,
+        \ 'time': localtime(),
+        \ 'grep_command': $FZF_DEFAULT_COMMAND
+        \}
+
   return fzf#run(s:wrap(a:name, merged, bang))
 endfunction
 
@@ -914,10 +925,14 @@ function! fzf#vim#grep(grep_command, ...)
     return s:ag_handler(get(opts, 'name', name), a:lines)
   endfunction
   let opts['sink*'] = remove(opts, 'sink')
+  return s:with_grep_command(a:grep_command, {-> s:fzf(name, opts, args)})
+endfunction
+
+function! s:with_grep_command(grep_command, fn)
   try
     let prev_default_command = $FZF_DEFAULT_COMMAND
     let $FZF_DEFAULT_COMMAND = a:grep_command
-    return s:fzf(name, opts, args)
+    return a:fn()
   finally
     let $FZF_DEFAULT_COMMAND = prev_default_command
   endtry
@@ -1721,6 +1736,33 @@ function! fzf#vim#complete(...)
 
   call feedkeys("\<Plug>(-fzf-complete-trigger)")
   return ''
+endfunction
+
+function! fzf#vim#resume()
+  if !exists("g:fzf_history_dir") || len(keys(s:last_command)) == 0
+    return
+  endif
+
+  let last_command_history_file = expand(g:fzf_history_dir.'/'.s:last_command.name)
+
+  if filereadable(last_command_history_file) && getftime(last_command_history_file) > s:last_command.time
+    let fzf_queries = readfile(last_command_history_file)
+
+    if len(fzf_queries) > 0
+      let last_query = fzf_queries[len(fzf_queries) - 1]
+      let opts = copy(s:last_command.opts)
+
+      let query_index = index(opts.options, '--query')
+      if query_index >= 0
+        call remove(opts.options, query_index, query_index + 1)
+      endif
+
+      call add(opts.options, '--query')
+      call add(opts.options, last_query)
+
+      return s:with_grep_command(s:last_command.grep_command, { -> fzf#run(s:wrap(s:last_command.name, opts, s:last_command.bang)) })
+    endif
+  endif
 endfunction
 
 " ------------------------------------------------------------------
